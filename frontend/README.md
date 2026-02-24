@@ -1,16 +1,65 @@
-# React + Vite
+# Jarvis MVP Demo (Frontend)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This Vite + React app simulates the Jarvis MVP wedge moment: an ambient co-presence bar that detects stall signals (tab switching, dwell without typing, scroll loops) and nudges the user back into motion.
 
-Currently, two official plugins are available:
+## What this demo shows
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Floating Jarvis presence bar (ambient, non-intrusive)
+- Activity sensing (typing, scroll, tab-switch simulation)
+- Stall heuristic triggers and micro-interventions
+- Restart reinforcement with activation latency metric
 
-## React Compiler
+## Run locally
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Use the existing frontend workspace. From the `frontend` directory:
 
-## Expanding the ESLint configuration
+```bash
+npm install
+npm run dev
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Then open the dev server URL shown in the terminal.
+
+## Demo flow
+
+1. Enter a task in the floating Jarvis bar and click **Start**.
+2. Type in the document to simulate active work.
+3. Click **Simulate tab switch** repeatedly or scroll the document without typing to trigger a stall.
+4. Use **Continue sentence** to restart and see the reinforcement prompt + latency metric.
+
+## Notes
+
+- All signals are local to the browser (no backend required for the wedge demo).
+- Heuristics are intentionally simple to keep the MVP fast and believable.
+
+## Chrome extension MVP (real in-browser overlay)
+
+This repo now includes a real Manifest V3 extension at `frontend/extension`.
+
+### Load unpacked in 2 minutes
+
+1. Open Chrome and go to `chrome://extensions`.
+2. Enable **Developer mode**.
+3. Click **Load unpacked**.
+4. Select the folder: `frontend/extension`.
+
+Jarvis will now appear as a floating co-presence bar on pages you open.
+
+### Extension demo flow for investors
+
+1. Open Google Docs or Notion.
+2. Jarvis asks: **"What are you starting right now?"**
+3. Enter `Q4 report` and click **Start**.
+4. Type briefly to enter active mode.
+5. Trigger stall by either:
+	- switching tabs quickly several times, or
+	- stopping typing for ~15s, or
+	- scrolling repeatedly without typing.
+6. Jarvis prompts restart and measures restart latency after you continue.
+
+### What is tracked (MVP)
+
+- Tab switch frequency window
+- Time since typing
+- Scroll distance without typing
+- Stall event + restart latency (stored locally in extension storage)

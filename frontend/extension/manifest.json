@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Jarvis MVP - Ambient Activation",
+  "version": "0.1.0",
+  "description": "Ambient co-presence bar that detects stall behavior and prompts task restart.",
+  "permissions": ["storage", "tabs", "idle"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Jarvis MVP"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["overlay.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

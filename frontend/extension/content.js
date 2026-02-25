@@ -1,27 +1,18 @@
 const JARVIS_ROOT_ID = 'jarvis-mvp-root'
 
-const RULES = {
-  tabSwitchThreshold: 3,
-  typingIdleMs: 15_000,
-  scrollWithoutTypingPx: 2_000,
-}
-
-const state = {
+let ui = null
+let local = { scrollDistance: 0, lastScrollY: window.scrollY }
+let session = {
   taskName: '',
   status: 'idle',
-  lastTypingAt: null,
-  stallAt: null,
+  stallType: '',
   restartLatencySec: null,
-  scrollDistance: 0,
-  tabSwitchCount: 0,
-  stallReason: '',
 }
 
-let ui = null
-let evaluationTimer = null
-
-function now() {
-  return Date.now()
+const PROMPTS = {
+  'tab-loop': 'One sentence now.',
+  'dwell-freeze': 'Write ugly first draft.',
+  'scroll-loop': 'Stop reading. Add one line.',
 }
 
 function isEditableTarget(target) {
@@ -31,110 +22,29 @@ function isEditableTarget(target) {
   return tag === 'textarea' || tag === 'input'
 }
 
-function emitEvent(type, meta = {}) {
-  const payload = {
-    type,
-    timestamp: new Date().toISOString(),
-    taskName: state.taskName || null,
-    status: state.status,
-    ...meta,
-  }
-
-  chrome.runtime.sendMessage({ type: 'JARVIS_LOG_EVENT', payload })
+function send(type, payload = {}) {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type, payload }, (res) => resolve(res))
+  })
 }
 
-function setStatus(nextStatus) {
-  state.status = nextStatus
+let lastRenderKey = ''
+
+function setSession(next) {
+  const prev = session
+  session = { ...session, ...next }
+
+  // Ignore noisy updates that don't change visible UI state
+  const prevKey = `${prev.status}|${prev.taskName}|${prev.stallType}|${prev.restartLatencySec}`
+  const nextKey = `${session.status}|${session.taskName}|${session.stallType}|${session.restartLatencySec}`
+  if (prevKey === nextKey) return
+
   render()
-}
-
-function triggerStall(reason) {
-  if (!state.taskName || state.status === 'stall') return
-  state.stallAt = now()
-  state.stallReason = reason
-  setStatus('stall')
-  emitEvent('stall_detected', { reason })
-}
-
-function handleRestart() {
-  if (!state.stallAt) return
-  state.restartLatencySec = Math.max(1, Math.round((now() - state.stallAt) / 1000))
-  state.stallAt = null
-  state.stallReason = ''
-  setStatus('restart')
-  emitEvent('task_restarted', { restartLatencySec: state.restartLatencySec })
-
-  window.setTimeout(() => {
-    if (state.status === 'restart') {
-      setStatus('active')
-    }
-  }, 2500)
-}
-
-function evaluateStall() {
-  if (!state.taskName || state.status === 'stall') return
-
-  const idleForMs = state.lastTypingAt ? now() - state.lastTypingAt : Infinity
-
-  if (state.tabSwitchCount > RULES.tabSwitchThreshold) {
-    triggerStall('tab switch loop')
-    return
-  }
-
-  if (idleForMs > RULES.typingIdleMs) {
-    triggerStall('dwell without typing')
-    return
-  }
-
-  if (state.scrollDistance > RULES.scrollWithoutTypingPx && idleForMs > 5_000) {
-    triggerStall('scroll loop')
-  }
-}
-
-function attachSignalListeners() {
-  document.addEventListener('input', (event) => {
-    if (!isEditableTarget(event.target)) return
-
-    state.lastTypingAt = now()
-    state.scrollDistance = 0
-
-    if (state.status === 'stall') {
-      handleRestart()
-      return
-    }
-
-    if (state.taskName && state.status !== 'active') {
-      setStatus('active')
-    }
-  })
-
-  let lastScrollY = window.scrollY
-
-  window.addEventListener(
-    'scroll',
-    () => {
-      const delta = Math.abs(window.scrollY - lastScrollY)
-      lastScrollY = window.scrollY
-      state.scrollDistance += delta
-    },
-    { passive: true }
-  )
-
-  chrome.runtime.onMessage.addListener((message) => {
-    if (message?.type !== 'JARVIS_TAB_ACTIVITY') return
-
-    state.tabSwitchCount = message.payload.switchCount
-
-    if (state.taskName && state.status !== 'stall') {
-      evaluateStall()
-    }
-  })
 }
 
 function buildUI() {
   const root = document.createElement('div')
   root.id = JARVIS_ROOT_ID
-
   root.innerHTML = `
     <div class="jarvis-bubble jarvis-idle" role="region" aria-label="Jarvis activation assistant">
       <div class="jarvis-led"></div>
@@ -144,56 +54,37 @@ function buildUI() {
       </div>
     </div>
   `
-
   document.documentElement.appendChild(root)
+  ui = {
+    root,
+    bubble: root.querySelector('.jarvis-bubble'),
+    body: root.querySelector('.jarvis-body'),
+  }
 
-  const bubble = root.querySelector('.jarvis-bubble')
-  const body = root.querySelector('.jarvis-body')
-  ui = { root, bubble, body }
-
-  root.addEventListener('click', (event) => {
-    const target = event.target
-    if (!(target instanceof HTMLElement)) return
-
-    const action = target.dataset.action
+  root.addEventListener('click', async (event) => {
+    const el = event.target instanceof HTMLElement ? event.target.closest('[data-action]') : null
+    if (!el) return
+    const action = el.dataset.action
     if (!action) return
 
     if (action === 'start-task') {
       const input = root.querySelector('input[data-role="task-input"]')
-      const value = input?.value?.trim()
-      if (!value) return
-
-      state.taskName = value
-      state.lastTypingAt = now()
-      state.tabSwitchCount = 0
-      state.scrollDistance = 0
-      setStatus('active')
-      emitEvent('task_started')
+      const taskName = input?.value?.trim()
+      if (!taskName) return
+      const res = await send('JARVIS_START_TASK', { taskName })
+      if (res?.ok) setSession(res.session)
       return
     }
 
-    if (action === 'continue') {
-      state.lastTypingAt = now()
-      state.scrollDistance = 0
-
-      if (state.status === 'stall') {
-        handleRestart()
-      } else {
-        setStatus('active')
-      }
-      return
-    }
-
-    if (action === 'dismiss-stall') {
-      setStatus('active')
+    if (action === 'continue' || action === 'dismiss-stall') {
+      const res = await send('JARVIS_CONTINUE')
+      if (res?.ok) setSession(res.session)
     }
   })
 }
 
 function renderBody() {
-  if (!ui) return ''
-
-  switch (state.status) {
+  switch (session.status) {
     case 'idle':
       return `
         <p class="jarvis-copy">What are you starting right now?</p>
@@ -202,29 +93,20 @@ function renderBody() {
           <button data-action="start-task">Start</button>
         </div>
       `
-
     case 'active':
-      return `
-        <p class="jarvis-copy">Continue sentence. I'm here.</p>
-        <div class="jarvis-micro">Watching for stall signals locally.</div>
-      `
-
+      return `<p class="jarvis-copy">Continue sentence. I'm here.</p>`
     case 'stall':
       return `
-        <p class="jarvis-copy">Still working on <strong>${state.taskName}</strong>?</p>
-        <div class="jarvis-micro">Detected: ${state.stallReason}</div>
+        <p class="jarvis-copy">Still working on <strong>${session.taskName || 'this task'}</strong>?</p>
+        <div class="jarvis-micro">Detected: ${session.stallType}</div>
+        <div class="jarvis-micro"><strong>${PROMPTS[session.stallType] || 'Continue.'}</strong></div>
         <div class="jarvis-row">
           <button data-action="dismiss-stall" class="jarvis-ghost">Yes</button>
           <button data-action="continue">Continue sentence</button>
         </div>
       `
-
     case 'restart':
-      return `
-        <p class="jarvis-copy">Nice. You restarted in <strong>${state.restartLatencySec}s</strong>.</p>
-        <div class="jarvis-micro">Activation latency event logged.</div>
-      `
-
+      return `<p class="jarvis-copy">Nice. You restarted in <strong>${session.restartLatencySec || '-'}s</strong>.</p>`
     default:
       return ''
   }
@@ -233,31 +115,90 @@ function renderBody() {
 function render() {
   if (!ui) return
 
-  ui.bubble.className = `jarvis-bubble jarvis-${state.status}`
+  const renderKey = `${session.status}|${session.taskName}|${session.stallType}|${session.restartLatencySec}`
+  if (renderKey === lastRenderKey) return
+  lastRenderKey = renderKey
+
+  ui.bubble.className = `jarvis-bubble jarvis-${session.status}`
+
+  // Only replace body HTML when state actually changes
   ui.body.innerHTML = renderBody()
+
   const label = ui.root.querySelector('.jarvis-state-label')
+  if (label) label.textContent = session.status
 
-  if (label) {
-    const copy = {
-      idle: 'idle presence',
-      active: 'active typing',
-      stall: 'stall detected',
-      restart: 'restart reinforcement',
-    }
-
-    label.textContent = copy[state.status]
+  // Autofocus only once when entering idle
+  if (session.status === 'idle') {
+    const input = ui.root.querySelector('input[data-role="task-input"]')
+    if (input && document.activeElement !== input) input.focus()
   }
 }
 
-function init() {
+
+function reportActivity({ typing = false }) {
+  // Do not spam background while user is typing into Jarvis input
+  const active = document.activeElement
+  const typingInJarvis = active instanceof HTMLElement && ui?.root?.contains(active)
+  if (typingInJarvis) return
+
+  send('JARVIS_SIGNAL_ACTIVITY', {
+    typing,
+    scrollDistance: local.scrollDistance,
+  }).then((res) => {
+    if (res?.ok) setSession(res.session)
+  })
+}
+
+let heartbeatId = null
+
+function attachSignalListeners() {
+  const markTyping = () => {
+    local.scrollDistance = 0
+    reportActivity({ typing: true })
+  }
+
+  document.addEventListener('input', (e) => {
+    if (isEditableTarget(e.target)) markTyping()
+  }, true)
+
+  document.addEventListener('keydown', (e) => {
+    const target = e.target
+    const targetIsEditable = isEditableTarget(target)
+    const typingInJarvis = target instanceof HTMLElement && ui?.root?.contains(target)
+
+    if (typingInJarvis || targetIsEditable) return
+    if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab'].includes(e.key)) return
+    markTyping()
+  }, true)
+
+  window.addEventListener('scroll', () => {
+    const delta = Math.abs(window.scrollY - local.lastScrollY)
+    local.lastScrollY = window.scrollY
+    local.scrollDistance += delta
+    reportActivity({ typing: false })
+  }, { passive: true })
+
+  // NEW: heartbeat so dwell-freeze can trigger even when user is fully idle
+  heartbeatId = window.setInterval(() => {
+    reportActivity({ typing: false })
+  }, 2000)
+
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === 'JARVIS_SYNC_STATE') setSession(message.payload || {})
+  })
+
+  window.addEventListener('beforeunload', () => {
+    if (heartbeatId) clearInterval(heartbeatId)
+  })
+}
+
+async function init() {
   if (document.getElementById(JARVIS_ROOT_ID)) return
-
   buildUI()
-  render()
   attachSignalListeners()
-
-  evaluationTimer = window.setInterval(evaluateStall, 1000)
-  emitEvent('jarvis_loaded')
+  const res = await send('JARVIS_GET_STATE')
+  if (res?.ok) setSession(res.session)
+  render()
 }
 
 init()

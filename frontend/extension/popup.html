@@ -1,0 +1,60 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Jarvis Proof Layer</title>
+    <style>
+      body { font-family: Inter, -apple-system, sans-serif; margin: 12px; width: 360px; }
+      h3 { margin: 0 0 10px; font-size: 14px; }
+      .card { border: 1px solid #d9deea; border-radius: 10px; padding: 10px; margin-bottom: 8px; }
+      .kpi { font-size: 20px; font-weight: 700; }
+      .muted { color: #6b7280; font-size: 12px; }
+      .row { display: flex; justify-content: space-between; margin: 4px 0; font-size: 13px; }
+      button { border: 0; border-radius: 8px; padding: 8px 10px; cursor: pointer; font-weight: 600; }
+      .primary { background: #1f6fff; color: white; }
+      ul { margin: 8px 0 0; padding-left: 18px; max-height: 160px; overflow: auto; }
+      li { font-size: 12px; margin-bottom: 4px; }
+    </style>
+  </head>
+  <body>
+    <h3>Jarvis MVP — Proof Layer</h3>
+
+    <div class="card">
+      <div class="muted">Median restart latency</div>
+      <div id="latency" class="kpi">—</div>
+    </div>
+
+    <div class="card">
+      <div class="muted">Intervention acceptance rate</div>
+      <div id="acceptance" class="kpi">—</div>
+    </div>
+
+    <div class="card">
+      <div class="muted">Stalls by type</div>
+      <div id="stalls"></div>
+    </div>
+
+    <div class="card">
+      <div class="muted">Last 10 events</div>
+      <ul id="timeline"></ul>
+    </div>
+
+    <div class="card">
+  <div class="muted">Session controls</div>
+  <div class="row">
+    <label><input type="checkbox" id="demoMode" /> Demo mode (fast triggers)</label>
+  </div>
+  <div class="row" style="margin-top:8px;">
+    <button id="resetData">Reset demo data</button>
+    <button id="exportCsv" class="primary">Export CSV</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="muted">Privacy</div>
+  <div style="font-size:12px;">Signals processed locally. No page content stored.</div>
+</div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

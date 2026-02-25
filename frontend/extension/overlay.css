@@ -13,6 +13,12 @@
   right: 20px;
   bottom: 20px;
   z-index: 2147483646;
+  pointer-events: none; /* allow page clicks except bubble */
+}
+
+#jarvis-mvp-root .jarvis-bubble,
+#jarvis-mvp-root .jarvis-bubble * {
+  pointer-events: auto; /* make input/button interactive */
 }
 
 #jarvis-mvp-root .jarvis-bubble {
@@ -88,6 +94,8 @@
   color: #f4f7ff;
   padding: 8px 10px;
   font-size: 12px;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 #jarvis-mvp-root button {

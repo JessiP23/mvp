@@ -1,6 +1,7 @@
 const JARVIS_ROOT_ID = 'jarvis-mvp-root'
 
 let ui = null
+let collapsed = true
 
 function getScrollTop() {
   return (
@@ -58,12 +59,23 @@ function setSession(next) {
 function buildUI() {
   const root = document.createElement('div')
   root.id = JARVIS_ROOT_ID
+  root.dataset.collapsed = 'true'
   root.innerHTML = `
-    <div class="jarvis-bubble jarvis-idle" role="region" aria-label="Jarvis activation assistant">
-      <div class="jarvis-led"></div>
-      <div class="jarvis-main">
-        <p class="jarvis-state-label">idle presence</p>
-        <div class="jarvis-body"></div>
+    <div class="jarvis-shell">
+      <div>
+        <button class="jarvis-pill" data-action="toggle" aria-label="Toggle Jarvis">
+          <span class="jarvis-led"></span>
+          <span>Jarvis</span>
+        </button>
+        <div class="jarvis-panel">
+          <div class="jarvis-bubble jarvis-idle" role="region" aria-label="Jarvis activation assistant">
+            <div class="jarvis-led"></div>
+            <div class="jarvis-main">
+              <p class="jarvis-state-label">idle presence</p>
+              <div class="jarvis-body"></div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   `
@@ -72,12 +84,19 @@ function buildUI() {
     root,
     bubble: root.querySelector('.jarvis-bubble'),
     body: root.querySelector('.jarvis-body'),
+    pillLed: root.querySelector('.jarvis-pill .jarvis-led'),
   }
 
   root.addEventListener('click', async (event) => {
     const el = event.target instanceof HTMLElement ? event.target.closest('[data-action]') : null
     if (!el) return
     const action = el.dataset.action
+    if (action === 'toggle') {
+      collapsed = !collapsed
+      ui.root.dataset.collapsed = collapsed ? 'true' : 'false'
+      return
+    }
+
     if (!action) return
 
     if (action === 'start-task') {
@@ -127,24 +146,19 @@ function renderBody() {
 
 function render() {
   if (!ui) return
-
   const renderKey = `${session.status}|${session.taskName}|${session.stallType}|${session.restartLatencySec}`
   if (renderKey === lastRenderKey) return
   lastRenderKey = renderKey
 
   ui.bubble.className = `jarvis-bubble jarvis-${session.status}`
-
-  // Only replace body HTML when state actually changes
   ui.body.innerHTML = renderBody()
 
-  const label = ui.root.querySelector('.jarvis-state-label')
-  if (label) label.textContent = session.status
-
-  // Autofocus only once when entering idle
-  if (session.status === 'idle') {
-    const input = ui.root.querySelector('input[data-role="task-input"]')
-    if (input && document.activeElement !== input) input.focus()
-  }
+  // sync pill led state color by class
+  ui.pillLed.className = 'jarvis-led'
+  if (session.status === 'active') ui.pillLed.style.background = '#83f4bc'
+  else if (session.status === 'stall') ui.pillLed.style.background = '#ff7a7a'
+  else if (session.status === 'restart') ui.pillLed.style.background = '#ffd166'
+  else ui.pillLed.style.background = '#6de1ff'
 }
 
 

@@ -13,16 +13,49 @@
   right: 20px;
   bottom: 20px;
   z-index: 2147483646;
-  pointer-events: none; /* allow page clicks except bubble */
+  pointer-events: none;
 }
 
+/* New shell for collapsed/expanded UX */
+#jarvis-mvp-root .jarvis-shell {
+  pointer-events: auto;
+  display: flex;
+  justify-content: flex-end;
+}
+
+#jarvis-mvp-root .jarvis-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(84, 92, 120, 0.5);
+  background: rgba(10, 14, 24, 0.95);
+  color: #f4f7ff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+#jarvis-mvp-root .jarvis-panel {
+  margin-top: 8px;
+  width: min(360px, calc(100vw - 32px));
+}
+
+#jarvis-mvp-root[data-collapsed='true'] .jarvis-panel {
+  display: none;
+}
+
+/* Keep interactive bubble */
 #jarvis-mvp-root .jarvis-bubble,
 #jarvis-mvp-root .jarvis-bubble * {
-  pointer-events: auto; /* make input/button interactive */
+  pointer-events: auto;
 }
 
 #jarvis-mvp-root .jarvis-bubble {
-  width: min(360px, calc(100vw - 32px));
+  width: 100%;
   display: grid;
   grid-template-columns: 14px 1fr;
   gap: 12px;
@@ -42,6 +75,13 @@
   margin-top: 3px;
   background: #6de1ff;
   box-shadow: 0 0 12px rgba(109, 225, 255, 0.95);
+}
+
+#jarvis-mvp-root .jarvis-pill .jarvis-led {
+  width: 10px;
+  height: 10px;
+  margin-top: 0;
+  box-shadow: none;
 }
 
 #jarvis-mvp-root .jarvis-active .jarvis-led {
@@ -121,7 +161,7 @@
     bottom: 12px;
   }
 
-  #jarvis-mvp-root .jarvis-bubble {
+  #jarvis-mvp-root .jarvis-panel {
     width: 100%;
   }
 }

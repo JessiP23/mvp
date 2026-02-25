@@ -1,5 +1,6 @@
 const SWITCH_WINDOW_MS = 45_000
 const MAX_EVENTS = 300
+const STALL_COOLDOWN_MS = 12_000
 
 const session = {
   taskName: '',
@@ -14,6 +15,7 @@ const session = {
   lastInterventionAt: null,
   lastInterventionAccepted: null,
   tone: 'gentle', // gentle | firm
+  cooldownUntil: 0,
 }
 
 const PROMPTS_BY_STALL = {
@@ -56,8 +58,13 @@ function pickPrompt(stallType) {
   return list[Math.floor(Math.random() * list.length)]
 }
 
+function inCooldown() {
+  return now() < (session.cooldownUntil || 0)
+}
+
 function triggerStall(stallType) {
   if (!session.taskName || session.status === 'stall') return
+  if (inCooldown()) return
   session.stallType = stallType
   session.stallAt = now()
   session.currentPrompt = pickPrompt(stallType)
@@ -83,6 +90,8 @@ function handleRestart() {
 
   session.stallAt = null
   session.stallType = ''
+  session.cooldownUntil = now() + STALL_COOLDOWN_MS
+  session.tabSwitches = []
   setStatus('restart')
 
   logEvent('task_restarted', {
@@ -102,8 +111,9 @@ function handleRestart() {
 
 function evaluateFromSignals({ idleForMs, scrollDistance, tabSwitchCount }) {
   if (!session.taskName || session.status === 'stall') return
-  if (tabSwitchCount > 3) return triggerStall('tab-loop')
-  if (scrollDistance > 2000 && idleForMs > 5000) return triggerStall('scroll-loop')
+  if (inCooldown()) return
+  if (tabSwitchCount >= 2) return triggerStall('tab-loop')
+  if (scrollDistance > 700 && idleForMs > 3000) return triggerStall('scroll-loop')
   if (idleForMs > 15000) return triggerStall('dwell-freeze')
 }
 
@@ -198,6 +208,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'JARVIS_CONTINUE') {
     session.lastTypingAt = now()
     session.lastInterventionAccepted = true
+    session.tabSwitches = []
+    session.cooldownUntil = now() + STALL_COOLDOWN_MS
     logEvent('intervention_response', {
       stall_type: session.stallType || null,
       accepted: true,

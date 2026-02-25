@@ -1,7 +1,18 @@
 const JARVIS_ROOT_ID = 'jarvis-mvp-root'
 
 let ui = null
-let local = { scrollDistance: 0, lastScrollY: window.scrollY }
+
+function getScrollTop() {
+  return (
+    window.scrollY ||
+    document.documentElement.scrollTop ||
+    document.body.scrollTop ||
+    0
+  )
+}
+
+let local = { scrollDistance: 0, lastScrollY: getScrollTop() }
+
 let session = {
   taskName: '',
   status: 'idle',
@@ -174,9 +185,15 @@ function attachSignalListeners() {
   }, true)
 
   window.addEventListener('scroll', () => {
-    const delta = Math.abs(window.scrollY - local.lastScrollY)
-    local.lastScrollY = window.scrollY
+    const currentY = getScrollTop()
+    const delta = Math.abs(currentY - local.lastScrollY)
+    local.lastScrollY = currentY
     local.scrollDistance += delta
+    reportActivity({ typing: false })
+  }, { passive: true })
+
+  window.addEventListener('wheel', (e) => {
+    local.scrollDistance += Math.abs(e.deltaY || 0)
     reportActivity({ typing: false })
   }, { passive: true })
 

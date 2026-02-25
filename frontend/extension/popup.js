@@ -36,10 +36,26 @@ async function render() {
 
   const timeline = document.getElementById('timeline')
   timeline.innerHTML = ''
+
+  function toLocal(ts) {
+    const d = new Date(ts)
+    return d.toLocaleString([], {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+      timeZoneName: 'short',
+    })
+  }
+
   for (const e of metrics.timeline) {
     const div = document.createElement('div')
     div.className = 'item'
-    div.textContent = `${e.ts} — ${e.type}${e.stall_type ? ` (${e.stall_type})` : ''}`
+    const when = e.ts ? toLocal(e.ts) : '-'
+    div.textContent = `${when} — ${e.type}${e.stall_type ? ` (${e.stall_type})` : ''}`
     timeline.appendChild(div)
   }
 }

@@ -1,63 +1,57 @@
-function fmt(v, suffix = '') {
-  return v === null || v === undefined ? '—' : `${v}${suffix}`
+function send(type, payload = {}) {
+  return new Promise((resolve) => chrome.runtime.sendMessage({ type, payload }, resolve))
 }
 
-function renderSummary(summary) {
-  document.getElementById('latency').textContent = fmt(summary?.medianRestartLatencySec, 's')
-  document.getElementById('acceptance').textContent = fmt(summary?.interventionAcceptanceRate, '%')
+function pct(v) {
+  if (v == null) return '-'
+  return `${Math.round(v * 100)}%`
+}
 
-  const stalls = document.getElementById('stalls')
-  stalls.innerHTML = ''
-  for (const row of summary?.stallsByType || []) {
-    const div = document.createElement('div')
-    div.className = 'row'
-    div.textContent = `${row.type}: ${row.count} (${row.percent}%)`
-    stalls.appendChild(div)
+function downloadCsv(rows) {
+  const headers = Object.keys(rows[0] || {})
+  const lines = [headers.join(',')]
+  for (const r of rows) {
+    lines.push(headers.map((h) => JSON.stringify(r[h] ?? '')).join(','))
   }
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `jarvis-events-${Date.now()}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+async function render() {
+  const res = await send('JARVIS_GET_METRICS')
+  if (!res?.ok) return
+
+  const { metrics, tone } = res
+  document.getElementById('latency').textContent = metrics.medianRestartLatencySec ? `${metrics.medianRestartLatencySec}s` : '-'
+  document.getElementById('acceptance').textContent = pct(metrics.acceptanceRate)
+  document.getElementById('tabloop').textContent = metrics.stallCounts['tab-loop'] || 0
+  document.getElementById('dwell').textContent = metrics.stallCounts['dwell-freeze'] || 0
+  document.getElementById('scroll').textContent = metrics.stallCounts['scroll-loop'] || 0
+  document.getElementById('tone').value = tone
 
   const timeline = document.getElementById('timeline')
   timeline.innerHTML = ''
-  for (const e of summary?.timeline || []) {
-    const li = document.createElement('li')
-    li.textContent = `${e.type} • ${e.stall_type || '-'} • ${new Date(e.timestamp).toLocaleTimeString()}`
-    timeline.appendChild(li)
+  for (const e of metrics.timeline) {
+    const div = document.createElement('div')
+    div.className = 'item'
+    div.textContent = `${e.ts} — ${e.type}${e.stall_type ? ` (${e.stall_type})` : ''}`
+    timeline.appendChild(div)
   }
 }
 
-async function loadSummary() {
-  const res = await chrome.runtime.sendMessage({ type: 'JARVIS_GET_METRICS_SUMMARY' })
-  renderSummary(res?.summary || {})
-}
-
-function downloadCsv(csvText) {
-  const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  chrome.downloads.download({
-    url,
-    filename: `jarvis-events-${Date.now()}.csv`,
-    saveAs: true,
-  })
-}
-
-async function loadDemoMode() {
-  const r = await chrome.storage.local.get(['jarvisDemoMode'])
-  document.getElementById('demoMode').checked = Boolean(r.jarvisDemoMode)
-}
-
-document.getElementById('demoMode')?.addEventListener('change', async (e) => {
-  const enabled = Boolean(e.target.checked)
-  await chrome.storage.local.set({ jarvisDemoMode: enabled })
-})
-
-document.getElementById('resetData')?.addEventListener('click', async () => {
-  await chrome.runtime.sendMessage({ type: 'JARVIS_RESET_EVENT_LOG' })
-  await loadSummary()
+document.getElementById('tone').addEventListener('change', async (e) => {
+  await send('JARVIS_SET_TONE', { tone: e.target.value })
+  render()
 })
 
 document.getElementById('exportCsv').addEventListener('click', async () => {
-  const res = await chrome.runtime.sendMessage({ type: 'JARVIS_EXPORT_CSV' })
-  if (res?.csv) downloadCsv(res.csv)
+  const res = await send('JARVIS_EXPORT_EVENTS')
+  if (res?.ok) downloadCsv(res.events || [])
 })
 
-loadSummary()
-loadDemoMode()
+render()

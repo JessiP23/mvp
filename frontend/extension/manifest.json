@@ -10,7 +10,8 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Jarvis MVP"
+    "default_title": "Jarvis MVP",
+    "default_popup": "popup.html"
   },
   "content_scripts": [
     {

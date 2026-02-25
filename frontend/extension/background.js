@@ -3,24 +3,33 @@ const MAX_EVENTS = 300
 
 const session = {
   taskName: '',
-  status: 'idle', // idle | active | stall | restart
+  status: 'idle',
   stallType: '',
   stallAt: null,
   restartLatencySec: null,
   lastTypingAt: null,
   tabSwitches: [],
   events: [],
+  currentPrompt: null,
+  lastInterventionAt: null,
+  lastInterventionAccepted: null,
+  tone: 'gentle', // gentle | firm
 }
 
-const PROMPTS = {
-  'tab-loop': 'One sentence now.',
-  'dwell-freeze': 'Write ugly first draft.',
-  'scroll-loop': 'Stop reading. Add one line.',
+const PROMPTS_BY_STALL = {
+  gentle: {
+    'tab-loop': ['One sentence now.', 'Return to the doc. Write one line.'],
+    'dwell-freeze': ['Write ugly first draft.', 'Bad first line is perfect. Type it now.'],
+    'scroll-loop': ['Stop reading. Add one line.', 'Summarize what you read in one sentence.'],
+  },
+  firm: {
+    'tab-loop': ['Back to task. One line now.', 'No switching. Write one sentence.'],
+    'dwell-freeze': ['Start now. Imperfect is required.', 'Type the first line immediately.'],
+    'scroll-loop': ['Stop scrolling. Produce one line.', 'Reading pause. Output one sentence now.'],
+  },
 }
 
-function now() {
-  return Date.now()
-}
+function now() { return Date.now() }
 
 function logEvent(type, meta = {}) {
   session.events.push({
@@ -30,9 +39,7 @@ function logEvent(type, meta = {}) {
     status: session.status,
     ...meta,
   })
-  if (session.events.length > MAX_EVENTS) {
-    session.events.shift()
-  }
+  if (session.events.length > MAX_EVENTS) session.events.shift()
 }
 
 function getSwitchCount() {
@@ -41,21 +48,28 @@ function getSwitchCount() {
   return session.tabSwitches.length
 }
 
-function setStatus(next) {
-  session.status = next
+function setStatus(next) { session.status = next }
+
+function pickPrompt(stallType) {
+  const bank = PROMPTS_BY_STALL[session.tone] || PROMPTS_BY_STALL.gentle
+  const list = bank[stallType] || ['Continue.']
+  return list[Math.floor(Math.random() * list.length)]
 }
 
 function triggerStall(stallType) {
   if (!session.taskName || session.status === 'stall') return
-
   session.stallType = stallType
   session.stallAt = now()
+  session.currentPrompt = pickPrompt(stallType)
+  session.lastInterventionAt = new Date().toISOString()
+  session.lastInterventionAccepted = null
   setStatus('stall')
 
   logEvent('stall_detected', {
     stall_type: stallType,
-    prompt_variant: PROMPTS[stallType] || 'Continue.',
-    intervention_timestamp: new Date().toISOString(),
+    prompt_variant: session.currentPrompt,
+    intervention_timestamp: session.lastInterventionAt,
+    tone: session.tone,
   })
 
   broadcastState()
@@ -63,7 +77,6 @@ function triggerStall(stallType) {
 
 function handleRestart() {
   if (!session.stallAt) return
-
   session.restartLatencySec = Math.max(1, Math.round((now() - session.stallAt) / 1000))
   const resumed = now() - session.stallAt <= 30_000
   const prevType = session.stallType
@@ -79,7 +92,6 @@ function handleRestart() {
   })
 
   broadcastState()
-
   setTimeout(() => {
     if (session.status === 'restart') {
       setStatus('active')
@@ -89,23 +101,35 @@ function handleRestart() {
 }
 
 function evaluateFromSignals({ idleForMs, scrollDistance, tabSwitchCount }) {
-  if (!session.taskName) return
+  if (!session.taskName || session.status === 'stall') return
+  if (tabSwitchCount > 3) return triggerStall('tab-loop')
+  if (scrollDistance > 2000 && idleForMs > 5000) return triggerStall('scroll-loop')
+  if (idleForMs > 15000) return triggerStall('dwell-freeze')
+}
 
-  // if stalled and typing resumes, handled via typing signal path
-  if (session.status === 'stall') return
+function buildMetrics() {
+  const stalls = session.events.filter((e) => e.type === 'stall_detected')
+  const restarts = session.events.filter((e) => e.type === 'task_restarted')
+  const responses = session.events.filter((e) => e.type === 'intervention_response')
 
-  if (tabSwitchCount > 3) {
-    triggerStall('tab-loop')
-    return
-  }
+  const latencies = restarts.map((r) => Number(r.restart_latency_sec)).filter((n) => Number.isFinite(n))
+  const medianRestartLatencySec = latencies.length
+    ? latencies.sort((a, b) => a - b)[Math.floor(latencies.length / 2)]
+    : null
 
-  if (idleForMs > 15_000) {
-    triggerStall('dwell-freeze')
-    return
-  }
+  const accepted = responses.filter((r) => r.accepted === true).length
+  const acceptanceRate = responses.length ? accepted / responses.length : null
 
-  if (scrollDistance > 2000 && idleForMs > 5000) {
-    triggerStall('scroll-loop')
+  const byType = { 'tab-loop': 0, 'dwell-freeze': 0, 'scroll-loop': 0 }
+  for (const s of stalls) byType[s.stall_type] = (byType[s.stall_type] || 0) + 1
+
+  return {
+    medianRestartLatencySec,
+    acceptanceRate,
+    stallCounts: byType,
+    totalStalls: stalls.length,
+    totalRestarts: restarts.length,
+    timeline: session.events.slice(-10).reverse(),
   }
 }
 
@@ -122,6 +146,19 @@ chrome.tabs.onActivated.addListener(() => {
   logEvent('tab_activated', { switch_count_45s: getSwitchCount() })
   broadcastState()
 })
+
+setInterval(() => {
+  if (session.status !== 'stall' || !session.stallAt) return
+  const elapsed = now() - session.stallAt
+  if (elapsed > 30_000 && session.lastInterventionAccepted == null) {
+    session.lastInterventionAccepted = false
+    logEvent('intervention_response', {
+      stall_type: session.stallType,
+      accepted: false,
+      ts_response: new Date().toISOString(),
+    })
+  }
+}, 5000)
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg?.type) return
@@ -142,49 +179,58 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === 'JARVIS_SIGNAL_ACTIVITY') {
     const { typing = false, scrollDistance = 0 } = msg.payload || {}
-
-    if (!session.taskName) {
-      sendResponse({ ok: true, session })
-      return true
-    }
+    if (!session.taskName) return sendResponse({ ok: true, session }), true
 
     if (typing) {
       session.lastTypingAt = now()
-      if (session.status === 'stall') {
-        handleRestart()
-      } else if (session.status !== 'active') {
-        setStatus('active')
-        broadcastState()
-      }
+      if (session.status === 'stall') handleRestart()
+      else if (session.status !== 'active') { setStatus('active'); broadcastState() }
       sendResponse({ ok: true, session })
       return true
     }
 
     const idleForMs = session.lastTypingAt ? now() - session.lastTypingAt : Infinity
-    evaluateFromSignals({
-      idleForMs,
-      scrollDistance,
-      tabSwitchCount: getSwitchCount(),
-    })
-
+    evaluateFromSignals({ idleForMs, scrollDistance, tabSwitchCount: getSwitchCount() })
     sendResponse({ ok: true, session })
     return true
   }
 
   if (msg.type === 'JARVIS_CONTINUE') {
     session.lastTypingAt = now()
-    if (session.status === 'stall') {
-      handleRestart()
-    } else {
-      setStatus('active')
-      broadcastState()
-    }
+    session.lastInterventionAccepted = true
+    logEvent('intervention_response', {
+      stall_type: session.stallType || null,
+      accepted: true,
+      ts_response: new Date().toISOString(),
+    })
+
+    if (session.status === 'stall') handleRestart()
+    else { setStatus('active'); broadcastState() }
+
     sendResponse({ ok: true, session })
     return true
   }
 
+  if (msg.type === 'JARVIS_SET_TONE') {
+    const tone = msg.payload?.tone === 'firm' ? 'firm' : 'gentle'
+    session.tone = tone
+    logEvent('tone_changed', { tone })
+    sendResponse({ ok: true, tone })
+    return true
+  }
+
   if (msg.type === 'JARVIS_GET_STATE') {
-    sendResponse({ ok: true, session, prompts: PROMPTS })
+    sendResponse({ ok: true, session })
+    return true
+  }
+
+  if (msg.type === 'JARVIS_GET_METRICS') {
+    sendResponse({ ok: true, metrics: buildMetrics(), tone: session.tone })
+    return true
+  }
+
+  if (msg.type === 'JARVIS_EXPORT_EVENTS') {
+    sendResponse({ ok: true, events: session.events })
     return true
   }
 })

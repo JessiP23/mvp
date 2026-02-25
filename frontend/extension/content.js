@@ -34,11 +34,13 @@ function setSession(next) {
   const prev = session
   session = { ...session, ...next }
 
-  // Ignore noisy updates that don't change visible UI state
+  if (prev.status !== session.status && (session.status === 'stall' || session.status === 'restart')) {
+    local.scrollDistance = 0
+  }
+
   const prevKey = `${prev.status}|${prev.taskName}|${prev.stallType}|${prev.restartLatencySec}`
   const nextKey = `${session.status}|${session.taskName}|${session.stallType}|${session.restartLatencySec}`
   if (prevKey === nextKey) return
-
   render()
 }
 

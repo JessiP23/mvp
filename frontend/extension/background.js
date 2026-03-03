@@ -1,8 +1,7 @@
 const SWITCH_WINDOW_MS = 45_000
 const MAX_EVENTS = 300
 const STALL_COOLDOWN_MS = 12_000
-const DRIFT_IFI_THRESHOLD = 65  // pre-stall amber warning
-const STALL_IFI_THRESHOLD = 90  // full stall via IFI alone
+const DRIFT_IFI_THRESHOLD = 35  // pre-stall amber warning (~6-8s idle + circular cursor)
 
 const session = {
   taskName: '',
@@ -69,13 +68,14 @@ function inCooldown() {
 }
 
 // IFI: composite 0-100 score from all behavioral signals
-// Weights: dwell 35%, scroll 25%, tab switches 25%, cursor entropy 15%
+// Weights: dwell 35% (norm 12s), scroll 20%, tab switches 20%, cursor entropy 25%
+// Cursor entropy weighted higher so circular mouse movement is detectable quickly
 function computeIFI({ idleForMs, scrollDistance, tabSwitchCount, cursorEntropy = 0 }) {
-  const dwell   = Math.min(1, idleForMs / 15000)
+  const dwell   = Math.min(1, idleForMs / 12000)   // saturates at 12s (was 15s)
   const scroll  = Math.min(1, scrollDistance / 700)
   const tabs    = Math.min(1, tabSwitchCount / 2)
   const entropy = Math.max(0, Math.min(1, cursorEntropy))
-  return Math.round((dwell * 0.35 + scroll * 0.25 + tabs * 0.25 + entropy * 0.15) * 100)
+  return Math.round((dwell * 0.35 + scroll * 0.20 + tabs * 0.20 + entropy * 0.25) * 100)
 }
 
 function triggerDrift() {
@@ -145,18 +145,19 @@ function evaluateFromSignals({ idleForMs, scrollDistance, tabSwitchCount, cursor
   const ifi = computeIFI({ idleForMs, scrollDistance, tabSwitchCount, cursorEntropy })
   session.ifiScore = ifi
 
-  // Hard signal thresholds → full stall (existing rules, unchanged)
-  if (tabSwitchCount >= 2) return triggerStall('tab-loop')
-  if (scrollDistance > 700 && idleForMs > 3000) return triggerStall('scroll-loop')
-  if (idleForMs > 15000) return triggerStall('dwell-freeze')
-
-  // IFI composite threshold → drift (pre-stall warning, new)
+  // IFI drift check FIRST — catches the pre-stall window before hard thresholds fire
   if (ifi >= DRIFT_IFI_THRESHOLD && session.status === 'active') {
     return triggerDrift()
   }
 
-  // Self-correction: user corrected during drift (IFI fell back below 40)
-  if (session.status === 'drift' && ifi < 40) {
+  // Hard signal thresholds → full stall (fire from active OR drift state)
+  // dwell-freeze raised to 25s so drift has time to show at ~10-12s
+  if (tabSwitchCount >= 2) return triggerStall('tab-loop')
+  if (scrollDistance > 700 && idleForMs > 3000) return triggerStall('scroll-loop')
+  if (idleForMs > 25000) return triggerStall('dwell-freeze')
+
+  // Self-correction: IFI dropped while in drift (user started engaging again)
+  if (session.status === 'drift' && ifi < 30) {
     session.cooldownUntil = now() + 8000
     session.ifiScore = 0
     setStatus('active')

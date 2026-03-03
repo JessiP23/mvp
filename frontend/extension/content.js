@@ -30,29 +30,34 @@ const PROMPTS = {
 }
 
 // ── Cursor entropy ────────────────────────────────────────────────────────────
-// Tracks directional randomness of cursor movement.
-// Purposeful work = directional. Stalling = circular drift.
-const cursorPositions = []
-const CURSOR_WINDOW = 20
+// Tracks directional randomness of cursor movement over a 5-second window.
+// Purposeful work = directional (low entropy). Avoidance = circular (high entropy).
+// Uses a TIME-based window (not count-based) so slow circles are fully captured.
+// Throttled at 20fps to keep the array small (~100 points per 5s window).
+const cursorPositions = []  // each entry: { x, y, t }
+const CURSOR_ENTROPY_WINDOW_MS = 5000
+let lastCursorSampleAt = 0
 
 function computeCursorEntropy() {
-  if (cursorPositions.length < 8) return 0
+  const cutoff = Date.now() - CURSOR_ENTROPY_WINDOW_MS
+  const recent = cursorPositions.filter((p) => p.t >= cutoff)
+  if (recent.length < 6) return 0
 
   let totalDistance = 0
-  for (let i = 1; i < cursorPositions.length; i++) {
-    const dx = cursorPositions[i].x - cursorPositions[i - 1].x
-    const dy = cursorPositions[i].y - cursorPositions[i - 1].y
+  for (let i = 1; i < recent.length; i++) {
+    const dx = recent[i].x - recent[i - 1].x
+    const dy = recent[i].y - recent[i - 1].y
     totalDistance += Math.sqrt(dx * dx + dy * dy)
   }
 
-  const first = cursorPositions[0]
-  const last  = cursorPositions[cursorPositions.length - 1]
+  const first = recent[0]
+  const last  = recent[recent.length - 1]
   const netDx = last.x - first.x
   const netDy = last.y - first.y
   const net   = Math.sqrt(netDx * netDx + netDy * netDy)
 
-  if (totalDistance < 15) return 0
-  // 0 = straight line (purposeful), 1 = circular drift (avoidance)
+  if (totalDistance < 20) return 0
+  // 0 = straight line (purposeful), 1 = full circle / random (avoidance)
   return Math.max(0, Math.min(1, 1 - net / totalDistance))
 }
 
@@ -139,7 +144,12 @@ function buildUI() {
       const taskName = input?.value?.trim()
       if (!taskName) return
       const res = await send('JARVIS_START_TASK', { taskName })
-      if (res?.ok) setSession(res.session)
+      if (res?.ok) {
+        setSession(res.session)
+        // Keep bubble open after starting so user sees the active state + IFI bar
+        collapsed = false
+        ui.root.dataset.collapsed = 'false'
+      }
       return
     }
 
@@ -242,6 +252,12 @@ function render() {
   if (renderKey === lastRenderKey) return
   lastRenderKey = renderKey
 
+  // Auto-expand when Jarvis needs attention — investor must see this
+  if (session.status === 'drift' || session.status === 'stall') {
+    collapsed = false
+    ui.root.dataset.collapsed = 'false'
+  }
+
   ui.bubble.className = `jarvis-bubble jarvis-${session.status}`
   ui.label.textContent = STATE_LABELS[session.status] || session.status
   ui.body.innerHTML = renderBody()
@@ -276,7 +292,7 @@ let heartbeatId = null
 function attachSignalListeners() {
   const markTyping = () => {
     local.scrollDistance = 0
-    cursorPositions.length = 0  // typing resets entropy
+    cursorPositions.length = 0  // reset entropy window — user is actively working
     reportActivity({ typing: true })
   }
 
@@ -307,10 +323,17 @@ function attachSignalListeners() {
     reportActivity({ typing: false })
   }, { passive: true })
 
-  // Cursor entropy: track last N positions for directional variance
+  // Cursor entropy: throttled at 20fps with timestamps so slow circles are captured
   document.addEventListener('mousemove', (e) => {
-    cursorPositions.push({ x: e.clientX, y: e.clientY })
-    if (cursorPositions.length > CURSOR_WINDOW) cursorPositions.shift()
+    const t = Date.now()
+    if (t - lastCursorSampleAt < 50) return  // 20fps throttle
+    lastCursorSampleAt = t
+    cursorPositions.push({ x: e.clientX, y: e.clientY, t })
+    // Evict positions older than 6s to bound memory
+    const cutoff = t - 6000
+    while (cursorPositions.length > 0 && cursorPositions[0].t < cutoff) {
+      cursorPositions.shift()
+    }
   }, { passive: true })
 
   // Heartbeat: triggers dwell-freeze detection even during full idle

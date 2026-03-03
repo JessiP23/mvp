@@ -19,13 +19,44 @@ let session = {
   status: 'idle',
   stallType: '',
   restartLatencySec: null,
+  ifiScore: 0,
 }
 
 const PROMPTS = {
   'tab-loop': 'One sentence now.',
   'dwell-freeze': 'Write ugly first draft.',
   'scroll-loop': 'Stop reading. Add one line.',
+  'drift-escalated': "What's one 30-second action? Even just opening the right tab.",
 }
+
+// ── Cursor entropy ────────────────────────────────────────────────────────────
+// Tracks directional randomness of cursor movement.
+// Purposeful work = directional. Stalling = circular drift.
+const cursorPositions = []
+const CURSOR_WINDOW = 20
+
+function computeCursorEntropy() {
+  if (cursorPositions.length < 8) return 0
+
+  let totalDistance = 0
+  for (let i = 1; i < cursorPositions.length; i++) {
+    const dx = cursorPositions[i].x - cursorPositions[i - 1].x
+    const dy = cursorPositions[i].y - cursorPositions[i - 1].y
+    totalDistance += Math.sqrt(dx * dx + dy * dy)
+  }
+
+  const first = cursorPositions[0]
+  const last  = cursorPositions[cursorPositions.length - 1]
+  const netDx = last.x - first.x
+  const netDy = last.y - first.y
+  const net   = Math.sqrt(netDx * netDx + netDy * netDy)
+
+  if (totalDistance < 15) return 0
+  // 0 = straight line (purposeful), 1 = circular drift (avoidance)
+  return Math.max(0, Math.min(1, 1 - net / totalDistance))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 function isEditableTarget(target) {
   if (!target) return false
@@ -46,14 +77,16 @@ function setSession(next) {
   const prev = session
   session = { ...session, ...next }
 
-  if (prev.status !== session.status && (session.status === 'stall' || session.status === 'restart')) {
+  if (prev.status !== session.status && ['stall', 'restart', 'drift'].includes(session.status)) {
     local.scrollDistance = 0
   }
 
   const prevKey = `${prev.status}|${prev.taskName}|${prev.stallType}|${prev.restartLatencySec}`
   const nextKey = `${session.status}|${session.taskName}|${session.stallType}|${session.restartLatencySec}`
-  if (prevKey === nextKey) return
-  render()
+  if (prevKey !== nextKey) render()
+
+  // Lightweight IFI bar update — no DOM rebuild needed
+  updateIFIBar()
 }
 
 function buildUI() {
@@ -83,7 +116,8 @@ function buildUI() {
   ui = {
     root,
     bubble: root.querySelector('.jarvis-bubble'),
-    body: root.querySelector('.jarvis-body'),
+    body:   root.querySelector('.jarvis-body'),
+    label:  root.querySelector('.jarvis-state-label'),
     pillLed: root.querySelector('.jarvis-pill .jarvis-led'),
   }
 
@@ -91,6 +125,7 @@ function buildUI() {
     const el = event.target instanceof HTMLElement ? event.target.closest('[data-action]') : null
     if (!el) return
     const action = el.dataset.action
+
     if (action === 'toggle') {
       collapsed = !collapsed
       ui.root.dataset.collapsed = collapsed ? 'true' : 'false'
@@ -111,8 +146,31 @@ function buildUI() {
     if (action === 'continue' || action === 'dismiss-stall') {
       const res = await send('JARVIS_CONTINUE')
       if (res?.ok) setSession(res.session)
+      return
+    }
+
+    // Drift: "I'm good" — self-corrected, reset IFI
+    if (action === 'dismiss-drift') {
+      const res = await send('JARVIS_DISMISS_DRIFT')
+      if (res?.ok) setSession(res.session)
+      return
+    }
+
+    // Drift: "Help me start" — escalate to stall with Layer 1 prompt
+    if (action === 'help-focus') {
+      const res = await send('JARVIS_ESCALATE_DRIFT')
+      if (res?.ok) setSession(res.session)
+      return
     }
   })
+}
+
+const STATE_LABELS = {
+  idle:    'idle presence',
+  active:  'active typing',
+  drift:   'drift detected',
+  stall:   'stall detected',
+  restart: 'restart reinforcement',
 }
 
 function renderBody() {
@@ -126,7 +184,26 @@ function renderBody() {
         </div>
       `
     case 'active':
-      return `<p class="jarvis-copy">Continue sentence. I'm here.</p>`
+      return `
+        <p class="jarvis-copy">Continue sentence. I'm here.</p>
+        <div class="jarvis-ifi-track" title="Initiation Friction Index — rises as avoidance signals accumulate">
+          <div class="jarvis-ifi-fill"></div>
+        </div>
+        <span class="jarvis-ifi-label">IFI ${session.ifiScore || 0}</span>
+      `
+    case 'drift':
+      return `
+        <p class="jarvis-copy">Still on <strong>${session.taskName || 'this task'}</strong>?<br>I'm noticing some drift.</p>
+        <div class="jarvis-micro">IFI ${session.ifiScore || 0} — pre-stall signal</div>
+        <div class="jarvis-layer-block">
+          <span class="jarvis-layer-badge">Layer 1 · Atomize task</span>
+          <p class="jarvis-micro" style="margin-top:3px;font-size:11px;">What's one 30-second action right now?</p>
+        </div>
+        <div class="jarvis-row">
+          <button data-action="dismiss-drift" class="jarvis-ghost">I'm good</button>
+          <button data-action="help-focus">Help me start</button>
+        </div>
+      `
     case 'stall':
       return `
         <p class="jarvis-copy">Still working on <strong>${session.taskName || 'this task'}</strong>?</p>
@@ -144,6 +221,21 @@ function renderBody() {
   }
 }
 
+// Lightweight: updates IFI bar fill width + color without rebuilding DOM
+function updateIFIBar() {
+  const fill = ui?.root?.querySelector('.jarvis-ifi-fill')
+  if (!fill) return
+  const score = session.ifiScore || 0
+  fill.style.width = `${score}%`
+  if (score < 45) {
+    fill.style.background = 'linear-gradient(90deg, #4d7bff, #83f4bc)'
+  } else if (score < 65) {
+    fill.style.background = 'linear-gradient(90deg, #4d7bff, #ffd166)'
+  } else {
+    fill.style.background = 'linear-gradient(90deg, #ff7a7a, #ffd166)'
+  }
+}
+
 function render() {
   if (!ui) return
   const renderKey = `${session.status}|${session.taskName}|${session.stallType}|${session.restartLatencySec}`
@@ -151,19 +243,21 @@ function render() {
   lastRenderKey = renderKey
 
   ui.bubble.className = `jarvis-bubble jarvis-${session.status}`
+  ui.label.textContent = STATE_LABELS[session.status] || session.status
   ui.body.innerHTML = renderBody()
 
-  // sync pill led state color by class
-  ui.pillLed.className = 'jarvis-led'
-  if (session.status === 'active') ui.pillLed.style.background = '#83f4bc'
-  else if (session.status === 'stall') ui.pillLed.style.background = '#ff7a7a'
-  else if (session.status === 'restart') ui.pillLed.style.background = '#ffd166'
-  else ui.pillLed.style.background = '#6de1ff'
+  // Pill LED color by state
+  ui.pillLed.style.background =
+    session.status === 'active'  ? '#83f4bc' :
+    session.status === 'drift'   ? '#ffd166' :
+    session.status === 'stall'   ? '#ff7a7a' :
+    session.status === 'restart' ? '#ffd166' :
+    '#6de1ff'
+
+  updateIFIBar()
 }
 
-
 function reportActivity({ typing = false }) {
-  // Do not spam background while user is typing into Jarvis input
   const active = document.activeElement
   const typingInJarvis = active instanceof HTMLElement && ui?.root?.contains(active)
   if (typingInJarvis) return
@@ -171,6 +265,7 @@ function reportActivity({ typing = false }) {
   send('JARVIS_SIGNAL_ACTIVITY', {
     typing,
     scrollDistance: local.scrollDistance,
+    cursorEntropy: computeCursorEntropy(),
   }).then((res) => {
     if (res?.ok) setSession(res.session)
   })
@@ -181,6 +276,7 @@ let heartbeatId = null
 function attachSignalListeners() {
   const markTyping = () => {
     local.scrollDistance = 0
+    cursorPositions.length = 0  // typing resets entropy
     reportActivity({ typing: true })
   }
 
@@ -211,7 +307,13 @@ function attachSignalListeners() {
     reportActivity({ typing: false })
   }, { passive: true })
 
-  // NEW: heartbeat so dwell-freeze can trigger even when user is fully idle
+  // Cursor entropy: track last N positions for directional variance
+  document.addEventListener('mousemove', (e) => {
+    cursorPositions.push({ x: e.clientX, y: e.clientY })
+    if (cursorPositions.length > CURSOR_WINDOW) cursorPositions.shift()
+  }, { passive: true })
+
+  // Heartbeat: triggers dwell-freeze detection even during full idle
   heartbeatId = window.setInterval(() => {
     reportActivity({ typing: false })
   }, 2000)

@@ -29,9 +29,12 @@ async function render() {
   const { metrics, tone } = res
   document.getElementById('latency').textContent = metrics.medianRestartLatencySec ? `${metrics.medianRestartLatencySec}s` : '-'
   document.getElementById('acceptance').textContent = pct(metrics.acceptanceRate)
+  document.getElementById('drifts').textContent = metrics.totalDrifts || 0
+  document.getElementById('avgifi').textContent = metrics.avgDriftIfi != null ? metrics.avgDriftIfi : '-'
   document.getElementById('tabloop').textContent = metrics.stallCounts['tab-loop'] || 0
   document.getElementById('dwell').textContent = metrics.stallCounts['dwell-freeze'] || 0
   document.getElementById('scroll').textContent = metrics.stallCounts['scroll-loop'] || 0
+  document.getElementById('driftescalated').textContent = metrics.stallCounts['drift-escalated'] || 0
   document.getElementById('tone').value = tone
 
   const timeline = document.getElementById('timeline')

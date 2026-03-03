@@ -33,6 +33,24 @@ h1 {
   max-width: 580px;
 }
 
+/* ── Metric row (3 cards) ─────────────────────────── */
+.metric-row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.metric-card-sm {
+  background: rgba(22, 26, 41, 0.8);
+  border: 1px solid rgba(84, 92, 120, 0.4);
+  padding: 1rem 1.25rem;
+  border-radius: 16px;
+  min-width: 130px;
+  text-align: right;
+}
+
+/* kept for backward compat */
 .metric-card {
   background: rgba(22, 26, 41, 0.8);
   border: 1px solid rgba(84, 92, 120, 0.4);
@@ -43,23 +61,119 @@ h1 {
 }
 
 .metric-title {
-  font-size: 0.85rem;
+  font-size: 0.78rem;
   color: #9aa0aa;
   margin: 0;
 }
 
 .metric-value {
-  font-size: 2.2rem;
-  margin: 0.4rem 0 0.2rem;
+  font-size: 1.9rem;
+  margin: 0.3rem 0 0.2rem;
   color: #8cf4c0;
 }
 
 .metric-caption {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: 0.78rem;
   color: #a7adba;
 }
 
+/* ── Proof strip (latency chart) ───────────────────── */
+.proof-strip {
+  background: rgba(18, 22, 33, 0.92);
+  border: 1px solid rgba(84, 92, 120, 0.3);
+  border-radius: 20px;
+  padding: 1.5rem 1.75rem;
+  box-shadow: 0 20px 40px rgba(5, 8, 20, 0.35);
+}
+
+.proof-strip h3 {
+  margin: 0 0 1.25rem;
+  font-size: 0.72rem;
+  color: #737b8f;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-weight: 500;
+}
+
+.chart-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2rem;
+}
+
+.bar-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.bar-group-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.bar-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.latency-bar {
+  width: 28px;
+  border-radius: 5px 5px 0 0;
+  transition: height 0.5s ease;
+}
+
+.bar-baseline {
+  background: rgba(147, 153, 168, 0.35);
+  border: 1px solid rgba(147, 153, 168, 0.4);
+}
+
+.bar-fast {
+  background: #8cf4c0;
+  box-shadow: 0 0 14px rgba(140, 244, 192, 0.35);
+}
+
+.bar-slow {
+  background: #ffd166;
+  box-shadow: 0 0 10px rgba(255, 209, 102, 0.3);
+}
+
+.bar-label {
+  font-size: 0.68rem;
+  color: #737b8f;
+}
+
+.group-label {
+  font-size: 0.68rem;
+  color: #5a6170;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+}
+
+.chart-separator {
+  width: 1px;
+  height: 100px;
+  background: rgba(84, 92, 120, 0.35);
+  align-self: flex-end;
+  margin-bottom: 1.5rem;
+}
+
+.chart-empty {
+  display: flex;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  color: #5a6170;
+  font-size: 0.82rem;
+  font-style: italic;
+  align-self: center;
+}
+
+/* ── Grid panels ───────────────────────────────────── */
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -145,6 +259,7 @@ button.ghost {
   color: #f5f7ff;
 }
 
+/* ── Signals panel ─────────────────────────────────── */
 .signal-list {
   display: grid;
   gap: 1rem;
@@ -188,6 +303,7 @@ button.ghost {
   gap: 0.6rem;
 }
 
+/* ── Jarvis bar ────────────────────────────────────── */
 .jarvis-bar {
   position: fixed;
   right: 24px;
@@ -200,7 +316,7 @@ button.ghost {
   background: rgba(10, 14, 24, 0.92);
   border: 1px solid rgba(84, 92, 120, 0.5);
   box-shadow: 0 22px 45px rgba(0, 0, 0, 0.45);
-  max-width: 360px;
+  max-width: 380px;
   z-index: 10;
 }
 
@@ -268,11 +384,43 @@ button.ghost {
   font-size: 0.75rem;
 }
 
+/* ── Layered intervention prompts ──────────────────── */
+.layer-block {
+  margin: 0.5rem 0 0.25rem;
+  padding: 0.7rem 0.9rem;
+  background: rgba(77, 123, 255, 0.08);
+  border: 1px solid rgba(109, 225, 255, 0.25);
+  border-radius: 12px;
+}
+
+.layer-badge {
+  display: block;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: #6de1ff;
+  margin-bottom: 0.3rem;
+}
+
+.layer-prompt {
+  margin: 0;
+  color: #e8ecf8;
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.streak-badge {
+  color: #8cf4c0;
+  font-size: 0.85rem;
+}
+
+/* ── Filler text ───────────────────────────────────── */
 .filler p {
   font-size: 0.85rem;
   color: #7d8598;
 }
 
+/* ── Responsive ────────────────────────────────────── */
 @media (max-width: 720px) {
   .app-shell {
     padding-bottom: 8rem;
@@ -282,5 +430,19 @@ button.ghost {
     left: 16px;
     right: 16px;
     max-width: none;
+  }
+
+  .metric-row {
+    width: 100%;
+  }
+
+  .metric-card-sm {
+    flex: 1;
+    min-width: 110px;
+    text-align: center;
+  }
+
+  .chart-bars {
+    overflow-x: auto;
   }
 }

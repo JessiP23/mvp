@@ -154,6 +154,65 @@
   background: rgba(62, 70, 95, 0.8);
 }
 
+/* ── Drift state (pre-stall amber warning) ───────────────────────────────── */
+#jarvis-mvp-root .jarvis-drift .jarvis-led {
+  background: #ffd166;
+  box-shadow: 0 0 13px rgba(255, 209, 102, 0.95);
+  animation: jarvis-pulse-drift 1.8s ease-in-out infinite;
+}
+
+@keyframes jarvis-pulse-drift {
+  0%, 100% { box-shadow: 0 0 8px rgba(255, 209, 102, 0.6); }
+  50%       { box-shadow: 0 0 18px rgba(255, 209, 102, 1); }
+}
+
+#jarvis-mvp-root .jarvis-drift {
+  border-color: rgba(255, 209, 102, 0.3);
+}
+
+/* ── IFI bar (live Initiation Friction Index) ────────────────────────────── */
+#jarvis-mvp-root .jarvis-ifi-track {
+  height: 4px;
+  background: rgba(84, 92, 120, 0.35);
+  border-radius: 999px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+
+#jarvis-mvp-root .jarvis-ifi-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #4d7bff, #83f4bc);
+  transition: width 0.6s ease, background 0.6s ease;
+}
+
+#jarvis-mvp-root .jarvis-ifi-label {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  color: #737b8f;
+  letter-spacing: 0.08em;
+}
+
+/* ── Drift layer block (Layer 1 atomize prompt) ──────────────────────────── */
+#jarvis-mvp-root .jarvis-layer-block {
+  margin-top: 8px;
+  padding: 7px 9px;
+  background: rgba(77, 123, 255, 0.08);
+  border: 1px solid rgba(109, 225, 255, 0.2);
+  border-radius: 10px;
+}
+
+#jarvis-mvp-root .jarvis-layer-badge {
+  display: block;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: #6de1ff;
+  margin-bottom: 2px;
+}
+
 @media (max-width: 768px) {
   #jarvis-mvp-root {
     right: 12px;
